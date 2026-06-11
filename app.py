@@ -265,3 +265,41 @@ else:
                 mime="application/octet-stream",
                 type="primary"
             )
+import plotly.express as px  # Add this to the top imports
+
+# Place this block right after the 4-Column Matrix layout closes
+st.markdown("---")
+st.markdown("### 📊 Workload Analytics Dashboard")
+
+if not st.session_state.tasks_db.empty:
+    # 1. Aggregate and count tasks by clock bucket
+    chart_data = st.session_state.tasks_db['clock_bucket'].value_counts().reset_index()
+    chart_data.columns = ['Clock Category', 'Task Count']
+    
+    # 2. Define colors to match your framework styling
+    color_map = {
+        'Now Clock ⏱️': '#FF4B4B',        # Red
+        'Compound Clock 📈': '#1C83E1',   # Blue
+        'Deep Clock 🧠': '#28A745',       # Green
+        'Wild Clock ⚡': '#FCA311'        # Orange
+    }
+    
+    # 3. Build the Plotly Pie Chart
+    fig = px.pie(
+        chart_data, 
+        values='Task Count', 
+        names='Clock Category',
+        color='Clock Category',
+        color_discrete_map=color_map,
+        hole=0.4,  # Turns it into a clean, modern donut chart
+        title="Distribution of Weekly Time Horizons"
+    )
+    
+    # Adjust chart text formatting for clean layouts
+    fig.update_traces(textposition='inside', textinfo='percent+value')
+    fig.update_layout(title_x=0.0, showlegend=True)
+    
+    # Render the chart on your web page dashboard
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.caption("No task data available to calculate distribution metrics.")
