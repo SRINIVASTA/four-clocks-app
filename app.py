@@ -12,18 +12,19 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # 1. PAGE LAYOUT SETUP
 st.set_page_config(
-    page_title="⏰ The Four Clocks Dashboard",
+    page_title="⏰ tasks-four-clocks-app",
     page_icon="⏰",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Initialize Session State tracking database arrays
+# Initialize Session State tracking database arrays with upgraded columns
 if 'tasks_db' not in st.session_state:
     schema = {
         'task_title': pd.Series(dtype='object'),
         'clock_bucket': pd.Series(dtype='category'),
-        'status': pd.Series(dtype='category'),
+        'status': pd.Series(dtype='string'), # Changed to string for fluid state management
+        'is_critical': pd.Series(dtype='bool'), # New priority data flag
         'date_created': pd.Series(dtype='datetime64[ns]')
     }
     st.session_state.tasks_db = pd.DataFrame(schema)
@@ -56,7 +57,7 @@ def split_text_into_clean_tasks(raw_text_block):
             processed_list.append(clean + ".")
     return processed_list
 
-def add_tasks_to_database(task_list):
+def add_tasks_to_database(task_list, marks_critical=False):
     new_rows = []
     for t in task_list:
         # Check duplicate pipeline rule
@@ -66,7 +67,8 @@ def add_tasks_to_database(task_list):
         new_rows.append({
             'task_title': t,
             'clock_bucket': assigned_bucket,
-            'status': 'Pending',
+            'status': '⏳ Pending',
+            'is_critical': marks_critical,
             'date_created': datetime.now()
         })
     if new_rows:
@@ -112,8 +114,9 @@ def generate_export_bytes(format_type):
         for cat in ['Now Clock ⏱️', 'Compound Clock 📈', 'Deep Clock 🧠', 'Wild Clock ⚡']:
             text_out += f"=== {cat.upper()} ===\n"
             sub = df[df['clock_bucket'] == cat]
-            for t in sub['task_title']:
-                text_out += f"- {t}\n"
+            for idx, row in sub.iterrows():
+                crit_tag = "[CRITICAL] " if row['is_critical'] else ""
+                text_out += f"- {crit_tag}{row['task_title']} ({row['status']})\n"
             text_out += "\n"
         return text_out.encode('utf-8')
     elif format_type == "Word":
@@ -122,8 +125,9 @@ def generate_export_bytes(format_type):
         for cat in ['Now Clock ⏱️', 'Compound Clock 📈', 'Deep Clock 🧠', 'Wild Clock ⚡']:
             doc.add_heading(cat, level=1)
             sub = df[df['clock_bucket'] == cat]
-            for t in sub['task_title']:
-                doc.add_paragraph(t, style='List Bullet')
+            for idx, row in sub.iterrows():
+                prefix = "🚨 CRITICAL: " if row['is_critical'] else ""
+                doc.add_paragraph(f"{prefix}{row['task_title']} ({row['status']})", style='List Bullet')
         doc.save(buffer)
         return buffer.getvalue()
     elif format_type == "PDF":
@@ -138,14 +142,15 @@ def generate_export_bytes(format_type):
         for cat in ['Now Clock ⏱️', 'Compound Clock 📈', 'Deep Clock 🧠', 'Wild Clock ⚡']:
             story.append(Paragraph(f"<b>{cat.upper()}</b>", cat_style))
             sub = df[df['clock_bucket'] == cat]
-            for t in sub['task_title']:
-                story.append(Paragraph(f"• {t}", task_style))
+            for idx, row in sub.iterrows():
+                prefix = "<font color='red'><b>[🚨 CRITICAL]</b></font> " if row['is_critical'] else ""
+                story.append(Paragraph(f"{prefix}{row['task_title']} ({row['status']})", task_style))
         doc.build(story)
         return buffer.getvalue()
 
 # 5. DRAW GRAPHICAL FRONTEND LAYOUT INTERFACE
 st.title("⏰ The Four Clocks Smart Workspace")
-st.markdown("Automate your 15-minute Monday ritual. Ingest unstructured task blocks and map out your strategic operational horizons.")
+st.markdown("Automate your 15-minute Monday ritual. Developed by **Srinivasta**.")
 
 # SIDEBAR INPUT PANEL MANAGEMENT
 with st.sidebar:
@@ -154,10 +159,14 @@ with st.sidebar:
     # Method 1: Text Box Sandbox Workspace
     st.subheader("Method 1: Paste Text Block")
     text_input = st.text_area("Paste mixed paragraphs here:", placeholder="Type or paste unstructured task entries...", height=120)
+    
+    # NEW: Toggle to inject critical status priority on entry batch
+    mark_as_critical = st.checkbox("🔥 Mark this batch as High Priority (Critical)")
+    
     if st.button("Process Text Block", type="primary", use_container_width=True):
         if text_input:
             tasks = split_text_into_clean_tasks(text_input)
-            add_tasks_to_database(tasks)
+            add_tasks_to_database(tasks, marks_critical=mark_as_critical)
             st.toast("⚡ Text block loaded successfully!", icon="✅")
             st.rerun()
 
@@ -169,7 +178,7 @@ with st.sidebar:
     if uploaded_file is not None:
         file_tasks = extract_tasks_from_file(uploaded_file)
         if file_tasks:
-            add_tasks_to_database(file_tasks)
+            add_tasks_to_database(file_tasks, marks_critical=False)
             st.toast(f"📊 Extracted items from {uploaded_file.name}!", icon="📥")
             st.rerun()
 
@@ -183,29 +192,57 @@ else:
     # 4-Column Horizon Matrix View
     col1, col2, col3, col4 = st.columns(4)
     clocks_meta = [
-        ("Now Clock ⏱️", col1, "gray"),
-        ("Compound Clock 📈", col2, "blue"),
-        ("Deep Clock 🧠", col3, "green"),
-        ("Wild Clock ⚡", col4, "orange")
+        ("Now Clock ⏱️", col1),
+        ("Compound Clock 📈", col2),
+        ("Deep Clock 🧠", col3),
+        ("Wild Clock ⚡", col4)
     ]
     
-    for bucket_name, col_obj, color in clocks_meta:
+    for bucket_name, col_obj in clocks_meta:
         with col_obj:
+            # Filter and AUTOMATICALLY SORT: Newest items appear at the very top (date_created descending)
             filtered_df = st.session_state.tasks_db[st.session_state.tasks_db['clock_bucket'] == bucket_name]
-            st.subheader(bucket_name)
+            filtered_df = filtered_df.sort_values(by='date_created', ascending=False)
             
-            # Draw beautiful metric container status borders
-            with st.container(border=True):
-                st.metric(label="Total Queue Items", value=len(filtered_df))
-                if filtered_df.empty:
-                    st.caption("No matching task entries found.")
-                else:
-                    for idx, row in filtered_df.iterrows():
-                        st.markdown(f"**▪️** {row['task_title']}")
-                        st.caption(f"Status: {row['status']}")
-                        st.markdown("---")
+            st.subheader(bucket_name)
+            st.metric(label="Total Items", value=len(filtered_df))
+            
+            if filtered_df.empty:
+                st.caption("No matching task entries found.")
+            else:
+                for idx, row in filtered_df.iterrows():
+                    # Create unique graphic borders for each task item module
+                    with st.container(border=True):
+                        # Feature 2: High Priority Red text Banner Trigger
+                        if row['is_critical']:
+                            st.markdown("<span style='color:#FF4B4B; font-weight:bold; font-size:14px;'>🚨 CRITICAL PRIORITY</span>", unsafe_allow_html=True)
+                        st.write(row['task_title'])
+                        
+                        # Feature 3: Status Pipeline Selector Hub
+                        current_status = row['status']
+                        status_options = ['⏳ Pending', '⚡ In Progress', '✅ Completed']
+                        
+                        # Find matching index to avoid rendering dropdown mismatches
+                        try:
+                            status_idx = status_options.index(current_status)
+                        except ValueError:
+                            status_idx = 0
+                            
+                        chosen_status = st.selectbox(
+                            "Update Status:",
+                            options=status_options,
+                            index=status_idx,
+                            key=f"status_{idx}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        # Handle live pipeline dataframe mutation shifts
+                        if chosen_status != current_status:
+                            st.session_state.tasks_db.at[idx, 'status'] = chosen_status
+                            st.rerun()
 
     # EXPORT DOWNSTREAM COMPILATION PANEL MANAGER
+    st.markdown("---")
     st.markdown("### 📥 Compile Work Cycle Outputs")
     exp_col1, exp_col2 = st.columns([1, 3])
     with exp_col1:
