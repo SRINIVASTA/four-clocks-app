@@ -265,41 +265,61 @@ else:
                 mime="application/octet-stream",
                 type="primary"
             )
-import plotly.express as px  # Add this to the top imports
+import plotly.express as px  # Keep this import at the top of your app.py
 
-# Place this block right after the 4-Column Matrix layout closes
+# Place this updated block right after the 4-Column Matrix layout closes
 st.markdown("---")
 st.markdown("### 📊 Workload Analytics Dashboard")
 
 if not st.session_state.tasks_db.empty:
-    # 1. Aggregate and count tasks by clock bucket
-    chart_data = st.session_state.tasks_db['clock_bucket'].value_counts().reset_index()
-    chart_data.columns = ['Clock Category', 'Task Count']
+    # 1. Create a fluid, inline filter row using columns
+    f_col1, f_col2 = st.columns([1, 2])
+    with f_col1:
+        # Status Filter Controller Group
+        status_filter = st.multiselect(
+            "Filter Chart by Task Status:",
+            options=['⏳ Pending', '⚡ In Progress', '✅ Completed'],
+            default=['⏳ Pending', '⚡ In Progress'],  # Defaults to showing active work
+            help="Select which status types to include in your metrics chart calculation."
+        )
     
-    # 2. Define colors to match your framework styling
-    color_map = {
-        'Now Clock ⏱️': '#FF4B4B',        # Red
-        'Compound Clock 📈': '#1C83E1',   # Blue
-        'Deep Clock 🧠': '#28A745',       # Green
-        'Wild Clock ⚡': '#FCA311'        # Orange
-    }
-    
-    # 3. Build the Plotly Pie Chart
-    fig = px.pie(
-        chart_data, 
-        values='Task Count', 
-        names='Clock Category',
-        color='Clock Category',
-        color_discrete_map=color_map,
-        hole=0.4,  # Turns it into a clean, modern donut chart
-        title="Distribution of Weekly Time Horizons"
-    )
-    
-    # Adjust chart text formatting for clean layouts
-    fig.update_traces(textposition='inside', textinfo='percent+value')
-    fig.update_layout(title_x=0.0, showlegend=True)
-    
-    # Render the chart on your web page dashboard
-    st.plotly_chart(fig, use_container_width=True)
+    # 2. Apply user selections to filter the active data frame pool
+    if status_filter:
+        filtered_chart_df = st.session_state.tasks_db[st.session_state.tasks_db['status'].isin(status_filter)]
+    else:
+        filtered_chart_df = st.session_state.tasks_db.copy()  # Fallback rule: show all if clear
+
+    # 3. Check if the filtered calculation dataset has valid data rows
+    if not filtered_chart_df.empty:
+        # Aggregate the matching values cleanly
+        chart_data = filtered_chart_df['clock_bucket'].value_counts().reset_index()
+        chart_data.columns = ['Clock Category', 'Task Count']
+        
+        # Enforce static styling map parameters
+        color_map = {
+            'Now Clock ⏱️': '#FF4B4B',        # Red
+            'Compound Clock 📈': '#1C83E1',   # Blue
+            'Deep Clock 🧠': '#28A745',       # Green
+            'Wild Clock ⚡': '#FCA311'        # Orange
+        }
+        
+        # 4. Draw the reactive Interactive Donut View Graph
+        fig = px.pie(
+            chart_data, 
+            values='Task Count', 
+            names='Clock Category',
+            color='Clock Category',
+            color_discrete_map=color_map,
+            hole=0.4,
+            title="Distribution of Active Time Horizons"
+        )
+        
+        fig.update_traces(textposition='inside', textinfo='percent+value')
+        fig.update_layout(title_x=0.0, showlegend=True)
+        
+        # Render the chart array inside your frontend layout grid container
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("⚠️ No data available matching the selected status combination.")
 else:
     st.caption("No task data available to calculate distribution metrics.")
