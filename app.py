@@ -104,8 +104,14 @@ def generate_export_bytes(format_type):
     buffer = io.BytesIO()
     
     if format_type == "CSV":
-        # Adding encoding='utf-8-sig' tells Excel to read UTF-8 emojis correctly
-        df.to_csv(buffer, index=False, encoding='utf-8-sig')
+        # Create a temporary copy to protect the live database state
+        export_df = df.copy()
+        
+        # Convert the datetime column into a clean string format Excel understands
+        if 'date_created' in export_df.columns and not export_df.empty:
+            export_df['date_created'] = export_df['date_created'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+        export_df.to_csv(buffer, index=False, encoding='utf-8-sig')
         return buffer.getvalue()
     elif format_type == "Excel":
         df.to_excel(buffer, index=False)
