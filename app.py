@@ -104,7 +104,8 @@ def generate_export_bytes(format_type):
     buffer = io.BytesIO()
     
     if format_type == "CSV":
-        df.to_csv(buffer, index=False)
+        # Adding encoding='utf-8-sig' tells Excel to read UTF-8 emojis correctly
+        df.to_csv(buffer, index=False, encoding='utf-8-sig')
         return buffer.getvalue()
     elif format_type == "Excel":
         df.to_excel(buffer, index=False)
